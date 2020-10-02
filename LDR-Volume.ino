@@ -38,6 +38,7 @@ char msgWelcome1[] = "ZDR 3x1";                     //** <-- maximum 20 characte
 char msgWelcome2[] = "VxD LDR Passive";             //** <-- maximum 20 characters (line 2)
 char msgWelcome3[] = "passive optical";             //** <-- maximum 20 characters (line 3)
 char msgWelcome4[] = "attenuator";                  //** <-- maximum 20 characters (line 4)
+char msgImpedance[] = "Impedance (K) : "
 char msgCalib[] = "Calibrating: ";                    //** <-- maximum 17 characters
 char msgTest[] = "Self-testing";                      //** <-- maximum 17 characters
 char msgBias[] = "Adjust BIAS";                       //** <-- maximum 19 characters
@@ -1751,11 +1752,11 @@ Serial.begin(57600);
       toSetupState();
 
     else {
-      #ifdef DELAY
+#ifdef DELAY
       setLSE(50); setRSE(50);
       setLSH(50); setRSH(50);
       doDelay();
-      #endif
+#endif
       loadIOValues();
       state = STATE_IO;
       oled.clear();
@@ -1784,8 +1785,8 @@ Serial.begin(57600);
 
   ////////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////////////
-  // Impedance adjustment.  Hold encoder button at startup and rotate to change.  Then calibrate.
-  //
+  // Impedance adjustment.  Hold encoder button at startup and rotate to change.
+  // Then please re-calibrate.
     int encoder = encoderPos;
     if( digitalRead(PIN_BTN) == LOW && btnReleased ) {
       //impedance = NOM_IMPEDANCE/1000;
@@ -1794,34 +1795,39 @@ Serial.begin(57600);
       if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
       if( impedance % IMPEDANCESTEP != 0 ) impedance = MINIMPEDANCE;
       oled.clear();
-      oled.print("Impedance (K) : "); oled.print(impedance);
+      oled.setFont(logoFont);
+      displayImpedance()
 
       while(true) {
         delay(100);
         if( encoderPos > encoder) {
           impedance += IMPEDANCESTEP;
           if( impedance > MAXIMPEDANCE ) impedance = MAXIMPEDANCE;
-          oled.clear();
-          oled.setCursor(10, 2);
-          oled.print("Impedance (K) : "); oled.print(impedance);
-
+          displayImpedance()
         }
         if( encoderPos < encoder) {
           impedance -= IMPEDANCESTEP;
           if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
-          oled.clear();
-          oled.setCursor(10, 2);
-          oled.print("Impedance (K) : "); oled.print(impedance);
-
+          displayImpedance()
         }
         encoder = encoderPos;
         if( digitalRead(PIN_BTN) == HIGH ) {  // Exit impedance loop
           encoderPos = 0;
+          oled.clear();
+          drawRunDisplay();
           toRunState();
           break;
         }
       }
     }
+}
+
+void displayImpedance() {
+  oled.setCursor((128 - sizeof(msgImpedance) * oled.fontWidth()) / 2, 0);
+  oled.print(msgImpedance); oled.print(impedance);
+
+  oled.setCursor((128 - sizeof(msgNoCalib) * oled.fontWidth()) / 2, 2);
+  oled.print(msgNoCalib);
 }
 #pragma endregion
 
