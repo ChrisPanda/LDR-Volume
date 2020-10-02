@@ -1,16 +1,21 @@
-#define I2C_ADDRESS 0x3C  // OLED I2C address, you can use i2c scanner sketch to find it
-//#define HALF_STEP // Half-step mode encoder? Comment out for Bourns specified in BOM.
-#define PCB 0  //different settings for different PCBs
-#define OLED_TYPE Adafruit128x64  // For SSD1306 OLED - exactly one type must be defined, comment out one of the two
-//#define OLED_TYPE SH1106_128x64     // For SH1106 OLED
+// Change History:
+// 1. OLED version by zdr
+// 2. use Arduino pulseIn function instead of newpulseIn and change remote control volume up/down by cgsong (2018.05.19)
+// 3. Impedance calibration bug fix by wineds
+//    - system would not calibrate @ 5K or > 30K due to casting problem from byte variable.
 
-// 2018.05.19 CGSONG
+#define I2C_ADDRESS 0x3C            // OLED I2C address, you can use i2c scanner sketch to find it
+//#define HALF_STEP                 // Half-step mode encoder? Comment out for Bourns specified in BOM.
+#define PCB 0                       //different settings for different PCBs
+#define OLED_TYPE Adafruit128x64    // For SSD1306 OLED - exactly one type must be defined, comment out one of the two
+//#define OLED_TYPE SH1106_128x64   // For SH1106 OLED
+
 
 #include <PinChangeInt.h>
 #include <EEPROM.h>
 #include <Adafruit_MCP23008.h>
+#include <SSD1306AsciiWire.h>
 #include "LDRstruct.h"
-#include "SSD1306AsciiWire.h"
 
 SSD1306AsciiWire oled;
 
@@ -61,7 +66,7 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 
 
 /******* Attenuator control *******/
-//#define NOM_IMPEDANCE 10000   //** target nominal attenuator impedance, between 5000 and 50000 Ohm. Recommended: 10000. Higher = less precision
+//#define NOM_IMPEDANCE 10000 //** target nominal attenuator impedance, between 5000 and 50000 Ohm. Recommended: 10000. Higher = less precision
 #define NOM_IMPEDANCE 10      //** target nominal attenuator impedance, between 50K and 50K Ohm. Recommended: 10K. Higher = less precision
 #define LOAD_IMPEDANCE 100000 //** input impedance of the amplifier that follows the attenuator. Should not be less than 100K. Default: 220000 ohm
 #define MINIMPEDANCE 5        //** minimum impedance limit in K
@@ -682,8 +687,8 @@ byte doCalibration() {
     //** calculate target R values
     att = getAttFromStep(i + 2);
 
-    LSE_target = RSE_target = getRxFromAttAndImp(att, NOM_IMPEDANCE);
-    LSH_target = RSH_target = getRyFromAttAndImp(att, NOM_IMPEDANCE);
+    LSE_target = RSE_target = getRxFromAttAndImp(att, (unsigned long)impedance*1000);
+    LSH_target = RSH_target = getRyFromAttAndImp(att, (unsigned long)impedance*1000);
 
     //** adjust shunt R for the parallel load impedance
     LSH_target = LOAD_IMPEDANCE * LSH_target / (LOAD_IMPEDANCE - LSH_target);
