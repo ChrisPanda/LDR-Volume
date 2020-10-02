@@ -1635,7 +1635,10 @@ void setVolume(byte vol) {
   if (isMuted == vol || (isMuted && vol))
     setMute(vol);
 
-  if (vol == 1 || vol == 0) {
+  if (vol == 0) {
+    setMute(0);
+  }
+  else if (vol == 1) {  // vol == 1 || vol == 0
     setLSE_Range(HIGH); setRSE_Range(HIGH);
     setLSH_Range(LOW); setRSH_Range(LOW);
     setLSE(2); setRSE(2); setLSH(200); setRSH(200);
