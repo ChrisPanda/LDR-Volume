@@ -38,7 +38,7 @@ char msgWelcome1[] = "ZDR 3x1";                     //** <-- maximum 20 characte
 char msgWelcome2[] = "VxD LDR Passive";             //** <-- maximum 20 characters (line 2)
 char msgWelcome3[] = "passive optical";             //** <-- maximum 20 characters (line 3)
 char msgWelcome4[] = "attenuator";                  //** <-- maximum 20 characters (line 4)
-char msgImpedance[] = "Impedance (K) : "
+char msgImpedance[] = "Impedance (K) : ";
 char msgCalib[] = "Calibrating: ";                    //** <-- maximum 17 characters
 char msgTest[] = "Self-testing";                      //** <-- maximum 17 characters
 char msgBias[] = "Adjust BIAS";                       //** <-- maximum 19 characters
@@ -1796,19 +1796,19 @@ Serial.begin(57600);
       if( impedance % IMPEDANCESTEP != 0 ) impedance = MINIMPEDANCE;
       oled.clear();
       oled.setFont(logoFont);
-      displayImpedance()
+      impedanceDisplay();
 
       while(true) {
         delay(100);
         if( encoderPos > encoder) {
           impedance += IMPEDANCESTEP;
           if( impedance > MAXIMPEDANCE ) impedance = MAXIMPEDANCE;
-          displayImpedance()
+          impedanceDisplay();
         }
         if( encoderPos < encoder) {
           impedance -= IMPEDANCESTEP;
           if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
-          displayImpedance()
+          impedanceDisplay();
         }
         encoder = encoderPos;
         if( digitalRead(PIN_BTN) == HIGH ) {  // Exit impedance loop
@@ -1822,11 +1822,11 @@ Serial.begin(57600);
     }
 }
 
-void displayImpedance() {
-  oled.setCursor((128 - sizeof(msgImpedance) * oled.fontWidth()) / 2, 0);
+void impedanceDisplay() {
+  oled.setCursor(0, 2);
   oled.print(msgImpedance); oled.print(impedance);
 
-  oled.setCursor((128 - sizeof(msgNoCalib) * oled.fontWidth()) / 2, 2);
+  oled.setCursor(0, 4);
   oled.print(msgNoCalib);
 }
 #pragma endregion
