@@ -8,7 +8,7 @@
 
 #include <PinChangeInt.h>
 #include <EEPROM.h>
-#include "Adafruit_MCP23008.h"
+#include <Adafruit_MCP23008.h>
 #include "LDRstruct.h"
 #include "SSD1306AsciiWire.h"
 
@@ -61,7 +61,8 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 
 
 /******* Attenuator control *******/
-#define NOM_IMPEDANCE 10000   //** target nominal attenuator impedance, between 5000 and 50000 Ohm. Recommended: 10000. Higher = less precision
+//#define NOM_IMPEDANCE 10000   //** target nominal attenuator impedance, between 5000 and 50000 Ohm. Recommended: 10000. Higher = less precision
+#define NOM_IMPEDANCE 10      //** target nominal attenuator impedance, between 50K and 50K Ohm. Recommended: 10K. Higher = less precision
 #define LOAD_IMPEDANCE 100000 //** input impedance of the amplifier that follows the attenuator. Should not be less than 100K. Default: 220000 ohm
 #define MINIMPEDANCE 5        //** minimum impedance limit in K
 #define MAXIMPEDANCE 50       //** maximum impedance limit in K
@@ -231,7 +232,7 @@ unsigned int tick;
 byte percent;
 bool notCalibrated;		  // if no calibration data exists, remain in Setup mode
 unsigned long calibStarted;
-unsigned long impedance;                   // target impedance
+byte impedance;                   // target impedance
 
 /******** LDR ********/
 //LDR necessary current for each volume step.
@@ -463,8 +464,8 @@ byte doCalibration() {
     att = getAttFromStep(i + 2);
 
     //** calculate target R values
-    LSE_target = RSE_target = getRxFromAttAndImp(att, NOM_IMPEDANCE);
-    LSH_target = RSH_target = getRyFromAttAndImp(att, NOM_IMPEDANCE);
+    LSE_target = RSE_target = getRxFromAttAndImp(att, (unsigned long)impedance*1000);
+    LSH_target = RSH_target = getRyFromAttAndImp(att, (unsigned long)impedance*1000);
 
     //** adjust shunt R for the parallel load impedance
     LSH_target = LOAD_IMPEDANCE * LSH_target / (LOAD_IMPEDANCE - LSH_target);
@@ -1787,23 +1788,25 @@ Serial.begin(57600);
       if( impedance > MAXIMPEDANCE ) impedance = MAXIMPEDANCE;
       if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
       if( impedance % IMPEDANCESTEP != 0 ) impedance = MINIMPEDANCE;
-      //lcd.clear();
-      //lcd.print("Impedance (K) : "); lcd.print(impedance);
+      oled.clear();
+      oled.print("Impedance (K) : "); oled.print(impedance);
 
       while(true) {
         delay(100);
         if( encoderPos > encoder) {
           impedance += IMPEDANCESTEP;
           if( impedance > MAXIMPEDANCE ) impedance = MAXIMPEDANCE;
-          //lcd.clear();
-          //lcd.print("Impedance (K) : "); lcd.print(impedance);
+          oled.clear();
+          oled.setCursor(10, 2);
+          oled.print("Impedance (K) : "); oled.print(impedance);
 
         }
         if( encoderPos < encoder) {
           impedance -= IMPEDANCESTEP;
           if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
-          //lcd.clear();
-          //lcd.print("Impedance (K) : "); lcd.print(impedance);
+          oled.clear();
+          oled.setCursor(10, 2);
+          oled.print("Impedance (K) : "); oled.print(impedance);
 
         }
         encoder = encoderPos;
