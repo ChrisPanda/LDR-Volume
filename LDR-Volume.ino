@@ -1,5 +1,5 @@
 #define I2C_ADDRESS 0x3C  // OLED I2C address, you can use i2c scanner sketch to find it
-//#define HALF_STEP // Half-step mode encoder? Comment out for Bourns specified in BOM.
+#define HALF_STEP // Half-step mode encoder? Comment out for Bourns specified in BOM.
 #define PCB 0  //different settings for different PCBs
 #define OLED_TYPE Adafruit128x64  // For SSD1306 OLED - exactly one type must be defined, comment out one of the two
 //#define OLED_TYPE SH1106_128x64     // For SH1106 OLED
@@ -8,7 +8,7 @@
 
 #include <PinChangeInt.h>
 #include <EEPROM.h>
-#include <Adafruit_MCP23008.h>
+#include "Adafruit_MCP23008.h"
 #include "LDRstruct.h"
 #include "SSD1306AsciiWire.h"
 
@@ -61,12 +61,8 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 
 
 /******* Attenuator control *******/
-//#define NOM_IMPEDANCE 10000   //** target nominal attenuator impedance, between 5000 and 50000 Ohm. Recommended: 10000. Higher = less precision
-#define NOM_IMPEDANCE 10      //** target nominal attenuator impedance, between 50K and 50K Ohm. Recommended: 10K. Higher = less precision
+#define NOM_IMPEDANCE 10000   //** target nominal attenuator impedance, between 5000 and 50000 Ohm. Recommended: 10000. Higher = less precision
 #define LOAD_IMPEDANCE 100000 //** input impedance of the amplifier that follows the attenuator. Should not be less than 100K. Default: 220000 ohm
-#define MINIMPEDANCE 5        //** minimum impedance limit in K
-#define MAXIMPEDANCE 50       //** maximum impedance limit in K
-#define IMPEDANCESTEP 5       //** increment for impedance steps in K
 #define VOL_MAX_STEP 50       //** maximum volume steps; range: 20...80. Higher = more memory usage
 #define VOL_DEFAULT 5         //** default volume step. Must be <= than MAX
 #define BTN_HOLD_TIME 2000    //** Time needed to hold the encoder button for entering setup menu. Default 2s
@@ -122,8 +118,8 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 
 /******* LDR control *******/
 #define LDR_LOW_TOLERANCE 2         // percent between theory and measured R value acceptable for low R values
-#define LDR_ZERO_MIN 300000         // minimum acceptable R when PWM=0 
-#define LDR_FULL_MAX 200            // maximum acceptable R when PWM=255. 
+#define LDR_ZERO_MIN 300000         // minimum acceptable R when PWM=0
+#define LDR_FULL_MAX 200            // maximum acceptable R when PWM=255.
 
 
 
@@ -201,7 +197,7 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 #define STATE_RUN 0        // normal run state
 #define STATE_IO 1         // when user selects input/output
 #define STATE_SETUP 2      // in setup menu mode
-#define STATE_CALIB 3      // calibration and measuring 
+#define STATE_CALIB 3      // calibration and measuring
 #define STATE_ERROR 4
 #define STATE_OFF 5
 #define ON HIGH
@@ -232,7 +228,7 @@ unsigned int tick;
 byte percent;
 bool notCalibrated;		  // if no calibration data exists, remain in Setup mode
 unsigned long calibStarted;
-byte impedance;                   // target impedance
+
 
 /******** LDR ********/
 //LDR necessary current for each volume step.
@@ -391,20 +387,19 @@ byte doSelfTest() {
 /******* Calibration *******/
 #pragma region Calibration
 byte doCalibration() {
-
 #ifndef DEBUG // turn calibration part of if debugging is on
-  calibStarted = millis();
-  //** local vars
-  float att;
-  unsigned long LSE_target, LSH_target, RSE_target, RSH_target, targetL0, targetR0;
-  byte pwL0, pwL1, pwR0, pwR1 = 0;
-  word iL0, iL1, iR0, iR1 = 0;
-  unsigned long rL0, rL1, rR0, rR1 = 0;
-  byte rangeL, rangeR;
-  byte dpw, drm;
-  bool foundL, foundR = false;
-  bool reloopL, reloopR = false;
-  bool nojumpL, nojumpR = false;
+calibStarted = millis();
+//** local vars
+float att;
+unsigned long LSE_target, LSH_target, RSE_target, RSH_target, targetL0, targetR0;
+byte pwL0, pwL1, pwR0, pwR1 = 0;
+word iL0, iL1, iR0, iR1 = 0;
+unsigned long rL0, rL1, rR0, rR1 = 0;
+byte rangeL, rangeR;
+byte dpw, drm;
+bool foundL, foundR = false;
+bool reloopL, reloopR = false;
+bool nojumpL, nojumpR = false;
 
   //	setLCDMaxLight();
   state = STATE_CALIB;
@@ -464,8 +459,8 @@ byte doCalibration() {
     att = getAttFromStep(i + 2);
 
     //** calculate target R values
-    LSE_target = RSE_target = getRxFromAttAndImp(att, (unsigned long)impedance*1000);
-    LSH_target = RSH_target = getRyFromAttAndImp(att, (unsigned long)impedance*1000);
+    LSE_target = RSE_target = getRxFromAttAndImp(att, NOM_IMPEDANCE);
+    LSH_target = RSH_target = getRyFromAttAndImp(att, NOM_IMPEDANCE);
 
     //** adjust shunt R for the parallel load impedance
     LSH_target = LOAD_IMPEDANCE * LSH_target / (LOAD_IMPEDANCE - LSH_target);
@@ -920,253 +915,252 @@ byte doCalibration() {
 
 
 
-//////////////////////////////////////////////////////////////////////////////////////
-// LDR management
-#pragma region LDR
+  //////////////////////////////////////////////////////////////////////////////////////
+  // LDR management
+  #pragma region LDR
 
-/******* get attenuation factor from step number, LOG law *******/
-float getAttFromStep(byte step) {
-  float p = step / float(VOL_MAX_STEP);
-  float divider = 100.0;
-  if (p < 0.4)
-    divider = 100.0 + pow((0.4 - p) * 50, 2.1);
-  if (step == 2) divider = 1000.0;
-  if (step == 3) divider = 600.0;
-  return pow(10, p * 2) / divider;
-}
-
-
-/******* read LDR resistor value *******/
-unsigned long getResistance(word measure, word seriesLDRres, word refResistor) {
-  if (measure >= 4088)
-    return 4000000;
-  else {
-    float v = LDR_VOLTAGE * measure / 4092.0;
-    float result = v * refResistor / (LDR_VOLTAGE - v) - seriesLDRres;
-    return long(result) + 25;
+  /******* get attenuation factor from step number, LOG law *******/
+  float getAttFromStep(byte step) {
+    float p = step / float(VOL_MAX_STEP);
+    float divider = 100.0;
+    if (p < 0.4)
+      divider = 100.0 + pow((0.4 - p) * 50, 2.1);
+    if (step == 2) divider = 1000.0;
+    if (step == 3) divider = 600.0;
+    return pow(10, p * 2) / divider;
   }
-}
 
 
-/******* get oversampled 12-bit reading *******/
-word getSample(byte pin) {
-  word result = 0;
-  for (byte i = 0; i < 16; i++) {
-    result += analogRead(pin);
-    delay(1);
+  /******* read LDR resistor value *******/
+  unsigned long getResistance(word measure, word seriesLDRres, word refResistor) {
+    if (measure >= 4088)
+      return 4000000;
+    else {
+      float v = LDR_VOLTAGE * measure / 4092.0;
+      float result = v * refResistor / (LDR_VOLTAGE - v) - seriesLDRres;
+      return long(result) + 25;
+    }
   }
-  return result >> 2;
-}
 
 
-/******* get LDR current *******/
-word getILSE() {
-  return getSample(PIN_SENSE_LSE);
-}
-word getILSH() {
-  return getSample(PIN_SENSE_LSH);
-}
-word getIRSE() {
-  return getSample(PIN_SENSE_RSE);
-}
-word getIRSH() {
-  return getSample(PIN_SENSE_RSH);
-}
-
-
-/******* get LDR resistance *******/
-unsigned long getRLSE() {
-  return getResistance(getSample(PIN_LDR_L), LDR_LSH_MIN, LDR_R1);
-}
-unsigned long getRLSH() {
-  return getResistance(getSample(PIN_LDR_L), LDR_LSE_MIN, LDR_R1);
-}
-unsigned long getRRSE() {
-  return getResistance(getSample(PIN_LDR_R), LDR_RSH_MIN, LDR_R18);
-}
-unsigned long getRRSH() {
-  return getResistance(getSample(PIN_LDR_R), LDR_RSE_MIN, LDR_R18);
-}
-
-
-/******* get series R from attenuation and impedance *******/
-unsigned long getRxFromAttAndImp(float att, unsigned long imp) {
-  return long(imp - att * imp);
-}
-
-/******* get shunt R from attenuation and impedance *******/
-unsigned long getRyFromAttAndImp(float att, unsigned long imp) {
-  return long(att * imp);
-}
-
-/******* get series R from attenuation and shunt R *******/
-unsigned long getRxFromAttAndRy(float att, unsigned long ry) {
-  return long(ry * (1 - att) / att);
-}
-
-/******* get shunt R from attenuation and series R *******/
-unsigned long getRyFromAttAndRx(float att, unsigned long rx) {
-  return long(att * rx / (1 - att));
-}
-
-
-/******* set DAC PWM *******/
-inline void setLSE(byte val) {
-  analogWrite(PIN_DAC_LSE, val);
-}
-inline void setLSH(byte val) {
-  analogWrite(PIN_DAC_LSH, val);
-}
-inline void setRSE(byte val) {
-  analogWrite(PIN_DAC_RSE, val);
-}
-inline void setRSH(byte val) {
-  analogWrite(PIN_DAC_RSH, val);
-}
-
-
-/******* set high current/low resistance bias range *******/
-// LOW = low resistance range
-inline void setLSE_Range(byte val) {
-  pinMode(PIN_SENSE_LSE, val == LOW ? OUTPUT : INPUT);
-}
-inline void setRSE_Range(byte val) {
-  pinMode(PIN_SENSE_RSE, val == LOW ? OUTPUT : INPUT);
-}
-inline void setLSH_Range(byte val) {                   ///tagme
-  pinMode(PIN_BIAS_LSH, val == LOW ? OUTPUT : INPUT);
-  PRINT("PIN_BIAS_LSH:"); PRINTLN(analogRead(PIN_BIAS_LSH));
-  LSHrange = val;
-}
-inline void setRSH_Range(byte val) {
-  pinMode(PIN_BIAS_RSH, val == LOW ? OUTPUT : INPUT);
-  PRINT("PIN_BIAS_RSH:"); PRINTLN(analogRead(PIN_BIAS_RSH));
-  RSHrange = val;
-}
-
-
-/** average delay needed for LDR settling **/
-byte getDelayHi(word i) {
-  if (i < 136) return 100;
-  if (i < 240) return 70;
-  if (i < 290) return 60;
-  if (i < 340) return 50;
-  if (i < 390) return 40;
-  if (i < 590) return 30;
-  if (i < 700) return 25;
-  if (i < 900) return 20;
-  if (i < 1300) return 15;
-  if (i < 2100) return 10;
-  if (i < 2500) return 8;
-  else return 5;
-}
-
-word getDelayLo(byte pw) {
-  return map(pw, 0, 255, 500, 700);
-}
-
-/** average difference in I (current) samples when PWM is increased by 1 **/
-byte getDeltaI(word sample) {
-  word s = sample & 32767;
-  if (sample < 32768) {
-    if (s < 42) return 5;
-    if (s < 57) return 6;
-    if (s < 100) return 7;
-    if (s < 150) return 8;
-    if (s < 210) return 9;
-    if (s < 500) return 10;
-    else return 11;
+  /******* get oversampled 12-bit reading *******/
+  word getSample(byte pin) {
+    word result = 0;
+    for (byte i = 0; i < 16; i++) {
+      result += analogRead(pin);
+      delay(1);
+    }
+    return result >> 2;
   }
-  else {
-    if (s < 16) return 3;
-    if (s < 32) return 4;
-    if (s < 50) return 5;
-    if (s < 70) return 6;
-    if (s < 100) return 7;
-    if (s < 180) return 8;
-    if (s < 300) return 9;
-    if (s < 640) return 10;
-    else return 11;
-  }
-}
 
-#pragma endregion
+
+  /******* get LDR current *******/
+  word getILSE() {
+    return getSample(PIN_SENSE_LSE);
+  }
+  word getILSH() {
+    return getSample(PIN_SENSE_LSH);
+  }
+  word getIRSE() {
+    return getSample(PIN_SENSE_RSE);
+  }
+  word getIRSH() {
+    return getSample(PIN_SENSE_RSH);
+  }
+
+
+  /******* get LDR resistance *******/
+  unsigned long getRLSE() {
+    return getResistance(getSample(PIN_LDR_L), LDR_LSH_MIN, LDR_R1);
+  }
+  unsigned long getRLSH() {
+    return getResistance(getSample(PIN_LDR_L), LDR_LSE_MIN, LDR_R1);
+  }
+  unsigned long getRRSE() {
+    return getResistance(getSample(PIN_LDR_R), LDR_RSH_MIN, LDR_R18);
+  }
+  unsigned long getRRSH() {
+    return getResistance(getSample(PIN_LDR_R), LDR_RSE_MIN, LDR_R18);
+  }
+
+
+  /******* get series R from attenuation and impedance *******/
+  unsigned long getRxFromAttAndImp(float att, unsigned long imp) {
+    return long(imp - att * imp);
+  }
+
+  /******* get shunt R from attenuation and impedance *******/
+  unsigned long getRyFromAttAndImp(float att, unsigned long imp) {
+    return long(att * imp);
+  }
+
+  /******* get series R from attenuation and shunt R *******/
+  unsigned long getRxFromAttAndRy(float att, unsigned long ry) {
+    return long(ry * (1 - att) / att);
+  }
+
+  /******* get shunt R from attenuation and series R *******/
+  unsigned long getRyFromAttAndRx(float att, unsigned long rx) {
+    return long(att * rx / (1 - att));
+  }
+
+
+  /******* set DAC PWM *******/
+  inline void setLSE(byte val) {
+    analogWrite(PIN_DAC_LSE, val);
+  }
+  inline void setLSH(byte val) {
+    analogWrite(PIN_DAC_LSH, val);
+  }
+  inline void setRSE(byte val) {
+    analogWrite(PIN_DAC_RSE, val);
+  }
+  inline void setRSH(byte val) {
+    analogWrite(PIN_DAC_RSH, val);
+  }
+
+
+  /******* set high current/low resistance bias range *******/
+  // LOW = low resistance range
+  inline void setLSE_Range(byte val) {
+    pinMode(PIN_SENSE_LSE, val == LOW ? OUTPUT : INPUT);
+  }
+  inline void setRSE_Range(byte val) {
+    pinMode(PIN_SENSE_RSE, val == LOW ? OUTPUT : INPUT);
+  }
+  inline void setLSH_Range(byte val) {                   ///tagme
+    pinMode(PIN_BIAS_LSH, val == LOW ? OUTPUT : INPUT);
+    PRINT("PIN_BIAS_LSH:"); PRINTLN(analogRead(PIN_BIAS_LSH));
+    LSHrange = val;
+  }
+  inline void setRSH_Range(byte val) {
+    pinMode(PIN_BIAS_RSH, val == LOW ? OUTPUT : INPUT);
+    PRINT("PIN_BIAS_RSH:"); PRINTLN(analogRead(PIN_BIAS_RSH));
+    RSHrange = val;
+  }
+
+
+  /** average delay needed for LDR settling **/
+  byte getDelayHi(word i) {
+    if (i < 136) return 100;
+    if (i < 240) return 70;
+    if (i < 290) return 60;
+    if (i < 340) return 50;
+    if (i < 390) return 40;
+    if (i < 590) return 30;
+    if (i < 700) return 25;
+    if (i < 900) return 20;
+    if (i < 1300) return 15;
+    if (i < 2100) return 10;
+    if (i < 2500) return 8;
+    else return 5;
+  }
+
+  word getDelayLo(byte pw) {
+    return map(pw, 0, 255, 500, 700);
+  }
+
+  /** average difference in I (current) samples when PWM is increased by 1 **/
+  byte getDeltaI(word sample) {
+    word s = sample & 32767;
+    if (sample < 32768) {
+      if (s < 42) return 5;
+      if (s < 57) return 6;
+      if (s < 100) return 7;
+      if (s < 150) return 8;
+      if (s < 210) return 9;
+      if (s < 500) return 10;
+      else return 11;
+    }
+    else {
+      if (s < 16) return 3;
+      if (s < 32) return 4;
+      if (s < 50) return 5;
+      if (s < 70) return 6;
+      if (s < 100) return 7;
+      if (s < 180) return 8;
+      if (s < 300) return 9;
+      if (s < 640) return 10;
+      else return 11;
+    }
+  }
+
+  #pragma endregion
 
 //////////////////////////////////////////////////////////////////////////////////////
 // RELAYS and I/O control
 #pragma region Relays
 
-byte relayMap[6] = { PIN_EXT_R1, PIN_EXT_R2, PIN_EXT_R3, PIN_EXT_R4, PIN_EXT_R5, PIN_EXT_R6};
+  byte relayMap[6] = { PIN_EXT_R1, PIN_EXT_R2, PIN_EXT_R3, PIN_EXT_R4, PIN_EXT_R5, PIN_EXT_R6};
 
-void setCalibrationRelays(byte val) {
-  mcp.digitalWrite(PIN_EXT_CALIB, val);
-  isMuted = val > 0;
-}
+  void setCalibrationRelays(byte val) {
+    mcp.digitalWrite(PIN_EXT_CALIB, val);
+    isMuted = val > 0;
+  }
 
 void setMute(byte volume) {
-  isMuted = volume == 0;
-  mcp.digitalWrite(PIN_EXT_R5, !isMuted && !chan_out);
-  mcp.digitalWrite(PIN_EXT_R6, !isMuted && chan_out);
+    isMuted = volume == 0;
+    mcp.digitalWrite(PIN_EXT_R5, !isMuted && !chan_out);
+    mcp.digitalWrite(PIN_EXT_R6, !isMuted && chan_out);
 
-  if (state == STATE_RUN) drawVolume(volume);
-}
+    if (state == STATE_RUN) drawVolume(volume);
+  }
 
 void setInput() {
-  bool wasMuted = isMuted;
-  if (millis() - mil_onInput > TIME_RELAYLATCH) {
-    drawInput();
+    bool wasMuted = isMuted;
+    if (millis() - mil_onInput > TIME_RELAYLATCH) {
+      drawInput();
 
-    for (byte i = 0; i < INPUTCOUNT; i++)
-      mcp.digitalWrite(relayMap[i], (chan_in == i));
+      for (byte i = 0; i < INPUTCOUNT; i++)
+        mcp.digitalWrite(relayMap[i], (chan_in == i));
 
-    mil_onInput = millis();
+      mil_onInput = millis();
+    }
+    if (isMuted && !wasMuted)
+      setVolume(volume);
   }
-  if (isMuted && !wasMuted)
-    setVolume(volume);
-}
 
 void setOutput() {
-  if (millis() - mil_onOutput > TIME_RELAYLATCH) {
-    drawOutput();
+    if (millis() - mil_onOutput > TIME_RELAYLATCH) {
+      drawOutput();
 
-    mcp.digitalWrite(PIN_EXT_R5, (!chan_out));
-    mcp.digitalWrite(PIN_EXT_R6, (chan_out));
+      mcp.digitalWrite(PIN_EXT_R5, (!chan_out));
+      mcp.digitalWrite(PIN_EXT_R6, (chan_out));
 
-    mil_onOutput = millis();
+      mil_onOutput = millis();
+    }
   }
-}
-#pragma endregion
+  #pragma endregion
 
 
 
-/* Rotary encoder handler for arduino.
+  /* Rotary encoder handler for arduino.
 
-   Copyright 2011 Ben Buxton. Licenced under the GNU GPL Version 3.
-   Contact: bb@cactii.net
+     Copyright 2011 Ben Buxton. Licenced under the GNU GPL Version 3.
+     Contact: bb@cactii.net
 
-   Quick implementation of rotary encoder routine.
+     Quick implementation of rotary encoder routine.
 
-   More info: http://www.buxtronix.net/2011/10/rotary-encoders-done-properly.html
+     More info: http://www.buxtronix.net/2011/10/rotary-encoders-done-properly.html
 
-*/
+  */
 
-// Arduino pins the encoder is attached to. Attach the center to ground.  - Already defined
-//#define PIN_ENC1 2
-//#define PIN_ENC2 3
+  // Arduino pins the encoder is attached to. Attach the center to ground.  - Already defined
+  //#define PIN_ENC1 2
+  //#define PIN_ENC2 3
 
-// Pins should be setup like this (already done in our code setup
-// define to enable weak pullups.
-//#define ENABLE_PULLUPS
-/* Call this once in setup(). */
-/* void rotary_init() {
+  // Pins should be setup like this (already done in our code setup
+  // define to enable weak pullups.
+  //#define ENABLE_PULLUPS
+  /* Call this once in setup(). */
+  /*void rotary_init() {
     pinMode(PIN_ENC1, INPUT);
     pinMode(PIN_ENC2, INPUT);
     #ifdef ENABLE_PULLUPS
     digitalWrite(PIN_ENC1, HIGH);
     digitalWrite(PIN_ENC2, HIGH);
     #endif
-    }
-*/
+    }*/
 
 #define DIR_CCW 0x10
 #define DIR_CW 0x20
@@ -1194,168 +1188,168 @@ volatile unsigned char encoderState = 0;
 
 
 /* Read input pins and process for events. Call this either from a
-   loop or an interrupt (eg pin change or timer).
+ loop or an interrupt (eg pin change or timer).
 
-   Returns 0 on no event, otherwise 0x80 or 0x40 depending on the direction.
+ Returns 0 on no event, otherwise 0x80 or 0x40 depending on the direction.
 */
 unsigned char rotary_process() {
-  unsigned char pinstate = (digitalRead(PIN_ENC2) << 1) | digitalRead(PIN_ENC1);
-  encoderState = ttable[encoderState & 0xf][pinstate];
-  return (encoderState & 0x30);
-}
+    unsigned char pinstate = (digitalRead(PIN_ENC2) << 1) | digitalRead(PIN_ENC1);
+    encoderState = ttable[encoderState & 0xf][pinstate];
+    return (encoderState & 0x30);
+  }
 
-/*
-  The following function defines a new pulseIn function because the pulseIn function in the Arduino
-  library does not exit if there is a pulse that does not end. Typically, this would not cause any
-  problems if you are reading true pulses, but because the remote code I wrote measures "UP pulses"
-  there is a chance that some noise would trigger a single pulse where the current pulseIn function
-  would hang.
-  The reason is the following: the IR receiver when it is not receiving any signals outputs HIGH.
-  If there is a signal (a real pulse), it outputs LOW and then HIGH. If I were to measure DOWN pulses,
-  this would be fine, but because the NEC protocol in the Apple remote uses distance between pulses to
-  codify its information, I measure the time between pulses which is an "UP pulse". In reality these UP
-  pulses are not really pulses, but the time between the real pulses from the remote control.
-  This code is taken from the Arduino code base (thanks to users in the Arduino forum) and modified to
-  check for end of pulse
-*/
+  /*
+    The following function defines a new pulseIn function because the pulseIn function in the Arduino
+    library does not exit if there is a pulse that does not end. Typically, this would not cause any
+    problems if you are reading true pulses, but because the remote code I wrote measures "UP pulses"
+    there is a chance that some noise would trigger a single pulse where the current pulseIn function
+    would hang.
+    The reason is the following: the IR receiver when it is not receiving any signals outputs HIGH.
+    If there is a signal (a real pulse), it outputs LOW and then HIGH. If I were to measure DOWN pulses,
+    this would be fine, but because the NEC protocol in the Apple remote uses distance between pulses to
+    codify its information, I measure the time between pulses which is an "UP pulse". In reality these UP
+    pulses are not really pulses, but the time between the real pulses from the remote control.
+    This code is taken from the Arduino code base (thanks to users in the Arduino forum) and modified to
+    check for end of pulse
+  */
 
 unsigned long newpulseIn(uint8_t pin, uint8_t state, unsigned long timeout)
 {
-  uint8_t bit = digitalPinToBitMask(pin);
-  uint8_t port = digitalPinToPort(pin);
-  uint8_t stateMask = (state ? bit : 0);
-  unsigned long width = 0;
-  unsigned long numloops = 0;
-  unsigned long maxloops = microsecondsToClockCycles(timeout) / 16;
+    uint8_t bit = digitalPinToBitMask(pin);
+    uint8_t port = digitalPinToPort(pin);
+    uint8_t stateMask = (state ? bit : 0);
+    unsigned long width = 0;
+    unsigned long numloops = 0;
+    unsigned long maxloops = microsecondsToClockCycles(timeout) / 16;
 
-  // wait for any previous pulse to end
-  while ((*portInputRegister(port) & bit) == stateMask)
-    if (numloops++ == maxloops) {
-      PRINTLN("wait for last end timeout");
-      return 0;
-    }
+    // wait for any previous pulse to end
+    while ((*portInputRegister(port) & bit) == stateMask)
+      if (numloops++ == maxloops) {
+        PRINTLN("wait for last end timeout");
+        return 0;
+      }
 
-  // wait for the pulse to start
-  while ((*portInputRegister(port) & bit) != stateMask)
-    if (numloops++ == maxloops) {
-      PRINTLN("wait for start timeout");
-      return 0;
-    }
+    // wait for the pulse to start
+    while ((*portInputRegister(port) & bit) != stateMask)
+      if (numloops++ == maxloops) {
+        PRINTLN("wait for start timeout");
+        return 0;
+      }
 
-  // wait for the pulse to stop
-  while ((*portInputRegister(port) & bit) == stateMask) {
-    if (width++ == maxloops) {  // added the check for end of pulse
-      PRINTLN("wait for end timeout");
-      return 0;
+    // wait for the pulse to stop
+    while ((*portInputRegister(port) & bit) == stateMask) {
+      if (width++ == maxloops) {  // added the check for end of pulse
+        PRINTLN("wait for end timeout");
+        return 0;
+      }
     }
+    return clockCyclesToMicroseconds(width * 29 + 16); // Recalibrated because of additional code
+    // in the width loop.  Used 1Khz square wave to empirically calibrate.
   }
-  return clockCyclesToMicroseconds(width * 29 + 16); // Recalibrated because of additional code
-  // in the width loop.  Used 1Khz square wave to empirically calibrate.
-}
 
 
 //////////////////////////////////////////////////////////////////////////////////////
 // IR Remote
 #pragma region Remote
 /*
-  IR code by Hifiduino. We cannot use IRremote lib because of timers interference.
+    IR code by Hifiduino. We cannot use IRremote lib because of timers interference.
 
-  The following function returns the code from the Apple Aluminum remote control. The Apple remote is
-  based on the NEC infrared remote protocol. Of the 32 bits (4 bytes) coded in the protocol, only the
-  third byte corresponds to the keys. The function also handles errors due to noise (returns 255) and
-  the repeat code (returs zero)
+    The following function returns the code from the Apple Aluminum remote control. The Apple remote is
+    based on the NEC infrared remote protocol. Of the 32 bits (4 bytes) coded in the protocol, only the
+    third byte corresponds to the keys. The function also handles errors due to noise (returns 255) and
+    the repeat code (returs zero)
 
-  The Apple remote returns the following codes:
+    The Apple remote returns the following codes:
 
-  Up key:     238 135 011 089
-  Down key:   238 135 013 089
-  Left key:   238 135 008 089
-  Right key:  238 135 007 089
-  Center key: 238 135 093 089 followed by 238 135 004 089 (See blog for why there are two codes)
-  Menu key:   238 135 002 089
-  Play key:   238 135 094 089 followed by 238 135 004 089
+    Up key:     238 135 011 089
+    Down key:   238 135 013 089
+    Left key:   238 135 008 089
+    Right key:  238 135 007 089
+    Center key: 238 135 093 089 followed by 238 135 004 089 (See blog for why there are two codes)
+    Menu key:   238 135 002 089
+    Play key:   238 135 094 089 followed by 238 135 004 089
 
-  (update) The value of the third byte varies from remote to remote. It turned out that the 8th bit
-  is not part of the command, so if we only read the 7 most significant bits, the value is the same
-  for all the remotes, including the white platic remote.
+    (update) The value of the third byte varies from remote to remote. It turned out that the 8th bit
+    is not part of the command, so if we only read the 7 most significant bits, the value is the same
+    for all the remotes, including the white platic remote.
 
-  The value for the third byte when we discard the least significant bit is:
+    The value for the third byte when we discard the least significant bit is:
 
-  Up key:     238 135 005 089
-  Down key:   238 135 006 089
-  Left key:   238 135 004 089
-  Right key:  238 135 003 089
-  Center key: 238 135 046 089 followed by 238 135 002 089 (See blog for why there are two codes)
-  Menu key:   238 135 001 089
-  Play key:   238 135 047 089 followed by 238 135 002 089
+    Up key:     238 135 005 089
+    Down key:   238 135 006 089
+    Left key:   238 135 004 089
+    Right key:  238 135 003 089
+    Center key: 238 135 046 089 followed by 238 135 002 089 (See blog for why there are two codes)
+    Menu key:   238 135 001 089
+    Play key:   238 135 047 089 followed by 238 135 002 089
 
-  More info here: http://hifiduino.wordpress.com/apple-aluminum-remote/
+    More info here: http://hifiduino.wordpress.com/apple-aluminum-remote/
 */
 
 int getIRkey() {
 
-  c1 = c2 = c3 = c4 = 0;
-  duration = 1;
-  bool repeat = false;
+    c1 = c2 = c3 = c4 = 0;
+    duration = 1;
+    bool repeat = false;
 
-  //while ((duration = newpulseIn(PIN_REMOTE, HIGH, 15000)) < 1000 && duration != 0)
-  while ((duration = pulseIn(PIN_REMOTE, HIGH, RemoteIRTune)) < 2000 && duration != 0)
-  {
-    // Wait for start pulse
+    //while ((duration = newpulseIn(PIN_REMOTE, HIGH, 15000)) < 1000 && duration != 0)
+    while ((duration = pulseIn(PIN_REMOTE, HIGH, RemoteIRTune)) < 2000 && duration != 0)
+    {
+      // Wait for start pulse
+    }
+    PRINTLN(duration);
+
+    if (duration == 0) 							// This is an error no start or end of pulse
+      return (255);							    // Use 255 as Error
+
+    //if (duration < 3000) {				// This is the repeat
+    if (duration > 1000) {          // This is the repeat
+      PRINT("repeat\n");
+      repeat = true;
+    }
+
+    if (duration < 5000) {						// This is the command get the 4 byte
+      mask = 1;
+      for (int i = 0; i < 8; i++) {					// get 8 bits
+        if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
+          c1 |= mask;					// Put the "1" in position
+        mask <<= 1;						// shift mask to next bit
+      }
+      mask = 1;
+      for (int i = 0; i < 8; i++) {					// get 8 bits
+        if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
+          c2 |= mask;					// Put the "1" in position
+        mask <<= 1;						// shift mask to next bit
+      }
+      mask = 1;
+      for (int i = 0; i < 8; i++) {					// get 8 bits
+        if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
+          c3 |= mask;					// Put the "1" in position
+        mask <<= 1;      					// shift mask to next bit
+      }
+
+      mask = 1;
+      for (int i = 0; i < 8; i++) {         // get 8 bits
+        if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
+          c4 |= mask;         // Put the "1" in position
+        mask <<= 1;               // shift mask to next bit
+      }
+
+      c3 >>= 1;   // Discard the least significant bit
+
+      PRINTLN(c1); PRINTLN(c2); PRINTLN(c3); PRINTLN(c4);
+
+      if ((c1 == 238) && (c2 == 135) /*&& c4 == 131*/) {                // Only return valid Apple remote codes
+
+        PRINTLN(c3);
+        return (c3);
+      }
+
+      if (repeat && (c3 == 2))                                          // Only way to verify a repeat from this remote is with the 2 code?
+        return (0);
+    }
+    return (255);
   }
-  PRINTLN(duration);
-
-  if (duration == 0) 							// This is an error no start or end of pulse
-    return (255);							    // Use 255 as Error
-
-  //if (duration < 3000) {				// This is the repeat
-  if (duration > 1000) {          // This is the repeat
-    PRINT("repeat\n");
-    repeat = true;
-  }
-
-  if (duration < 5000) {						// This is the command get the 4 byte
-    mask = 1;
-    for (int i = 0; i < 8; i++) {					// get 8 bits
-      if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
-        c1 |= mask;					// Put the "1" in position
-      mask <<= 1;						// shift mask to next bit
-    }
-    mask = 1;
-    for (int i = 0; i < 8; i++) {					// get 8 bits
-      if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
-        c2 |= mask;					// Put the "1" in position
-      mask <<= 1;						// shift mask to next bit
-    }
-    mask = 1;
-    for (int i = 0; i < 8; i++) {					// get 8 bits
-      if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
-        c3 |= mask;					// Put the "1" in position
-      mask <<= 1;      					// shift mask to next bit
-    }
-
-    mask = 1;
-    for (int i = 0; i < 8; i++) {         // get 8 bits
-      if (pulseIn(PIN_REMOTE, HIGH, 3000) > 1000)  // If "1" pulse
-        c4 |= mask;         // Put the "1" in position
-      mask <<= 1;               // shift mask to next bit
-    }
-
-    c3 >>= 1;   // Discard the least significant bit
-
-    PRINTLN(c1); PRINTLN(c2); PRINTLN(c3); PRINTLN(c4);
-
-    if ((c1 == 238) && (c2 == 135) /*&& c4 == 131*/) {                // Only return valid Apple remote codes
-
-      PRINTLN(c3);
-      return (c3);
-    }
-
-    if (repeat && (c3 == 2))                                          // Only way to verify a repeat from this remote is with the 2 code?
-      return (0);
-  }
-  return (255);
-}
 #pragma endregion
 
 
@@ -1364,112 +1358,103 @@ int getIRkey() {
 //  EEPROM routines
 #pragma region EEPROM
 
-// address:
-// 0  volume
-// 1  input (0 based)
-// 2  output (0 based)
-// 3  33 marker
-// 4  44 marker
-// 5  VOL_MAX_STEP
-// 6  impedance
-// 7  ...  calibration data
+  // address:
+  // 0  volume
+  // 1  input (0 based)
+  // 2  output (0 based)
+  // 3  33 marker
+  // 4  44 marker
+  // 5  VOL_MAX_STEP
+  // 6...  calibration data
 
-#define OFFSET_L 7
+#define OFFSET_L 6
 
 void saveCalibration() {
 
-  byte *p;
+    byte *p;
 
-  PRINTLN("Save left");
-  for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
-    p = (byte*)&dataL[sample];
-    for (byte i = 0; i < 6; i++) {  // LDRsample struct size = 6
-      PRINT("addr "); PRINT(OFFSET_L + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
-      if (EEPROM.read(OFFSET_L + sample * 6 + i) != p[i])
-        EEPROM.write(OFFSET_L + sample * 6 + i, p[i]);
+    PRINTLN("Save left");
+    for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
+      p = (byte*)&dataL[sample];
+      for (byte i = 0; i < 6; i++) {  // LDRsample struct size = 6
+        PRINT("addr "); PRINT(OFFSET_L + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
+        if (EEPROM.read(OFFSET_L + sample * 6 + i) != p[i])
+          EEPROM.write(OFFSET_L + sample * 6 + i, p[i]);
+      }
     }
-  }
 
-  PRINTLN("Save right");
-  word offset_R = OFFSET_L + 6 * (VOL_MAX_STEP - 2);
+    PRINTLN("Save right");
+    word offset_R = OFFSET_L + 6 * (VOL_MAX_STEP - 2);
 
-  for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
-    p = (byte*)&dataR[sample];
-    for (byte i = 0; i < 6; i++) {  // LDRsample struct size = 6
-      PRINT("addr "); PRINT(offset_R + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
-      if (EEPROM.read(offset_R + sample * 6 + i) != p[i])
-        EEPROM.write(offset_R + sample * 6 + i, p[i]);
+    for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
+      p = (byte*)&dataR[sample];
+      for (byte i = 0; i < 6; i++) {  // LDRsample struct size = 6
+        PRINT("addr "); PRINT(offset_R + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
+        if (EEPROM.read(offset_R + sample * 6 + i) != p[i])
+          EEPROM.write(offset_R + sample * 6 + i, p[i]);
+      }
     }
-  }
 
-  //write marker:
-  EEPROM.write(3, 33); EEPROM.write(4, 44); EEPROM.write(5, VOL_MAX_STEP);
-}
+    //write marker:
+    EEPROM.write(3, 33); EEPROM.write(4, 44); EEPROM.write(5, VOL_MAX_STEP);
+  }
 
 
 bool loadCalibration() {
-  byte *p;
-  word offset_R = OFFSET_L + 6 * (VOL_MAX_STEP - 2);
+    byte *p;
+    word offset_R = OFFSET_L + 6 * (VOL_MAX_STEP - 2);
 
-  if (EEPROM.read(3) != 33 || EEPROM.read(4) != 44 || EEPROM.read(5) != VOL_MAX_STEP)
-    return false; //no data
+    if (EEPROM.read(3) != 33 || EEPROM.read(4) != 44 || EEPROM.read(5) != VOL_MAX_STEP)
+      return false; //no data
 
-  PRINTLN("Load left");
-  for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
-    p = (byte*)&dataL[sample];
-    for (byte i = 0; i < 6; i++) {
-      p[i] = EEPROM.read(OFFSET_L + sample * 6 + i);
-      PRINT("addr "); PRINT(OFFSET_L + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
+    PRINTLN("Load left");
+    for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
+      p = (byte*)&dataL[sample];
+      for (byte i = 0; i < 6; i++) {
+        p[i] = EEPROM.read(OFFSET_L + sample * 6 + i);
+        PRINT("addr "); PRINT(OFFSET_L + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
+      }
     }
-  }
 
-  PRINTLN("Load right");
-  for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
-    p = (byte*)&dataR[sample];
-    for (byte i = 0; i < 6; i++) {
-      p[i] = EEPROM.read(offset_R + sample * 6 + i);
-      PRINT("addr "); PRINT(offset_R + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
+    PRINTLN("Load right");
+    for (byte sample = 0; sample <= VOL_MAX_STEP - 3; sample++) {
+      p = (byte*)&dataR[sample];
+      for (byte i = 0; i < 6; i++) {
+        p[i] = EEPROM.read(offset_R + sample * 6 + i);
+        PRINT("addr "); PRINT(offset_R + sample * 6 + i); PRINT(" byte "); PRINTLN(p[i]);
+      }
     }
-  }
 
-  return true;
-}
+    return true;
+  }
 
 
 void saveIOValues() {
-  if (EEPROM.read(0) != volume)
-    EEPROM.write(0, volume);
-  if (EEPROM.read(1) != chan_in)
-    EEPROM.write(1, chan_in);
-  if (EEPROM.read(2) != chan_out)
-    EEPROM.write(2, chan_out);
-  if (EEPROM.read(6) != impedance)
-    EEPROM.write(6, impedance);
-}
+    if (EEPROM.read(0) != volume)
+      EEPROM.write(0, volume);
+    if (EEPROM.read(1) != chan_in)
+      EEPROM.write(1, chan_in);
+    if (EEPROM.read(2) != chan_out)
+      EEPROM.write(2, chan_out);
+  }
 
 void loadIOValues() {
-  volume = EEPROM.read(0);
-  chan_in = EEPROM.read(1);
-  chan_out = EEPROM.read(2);
-  impedance = EEPROM.read(6);
-  if (volume > VOL_MAX_STEP)
-    volume = VOL_DEFAULT;
-  if (chan_in >= INPUTCOUNT)
-    chan_in = 0;
-  if (chan_out >= OUTPUTCOUNT)
-    chan_out = 0;
-
-  if (impedance < MINIMPEDANCE)
-    impedance = NOM_IMPEDANCE;
-  if (impedance > MAXIMPEDANCE)
-    impedance = NOM_IMPEDANCE;
-}
+    volume = EEPROM.read(0);
+    chan_in = EEPROM.read(1);
+    chan_out = EEPROM.read(2);
+    if (volume > VOL_MAX_STEP)
+      volume = VOL_DEFAULT;
+    if (chan_in >= INPUTCOUNT)
+      chan_in = 0;
+    if (chan_out >= OUTPUTCOUNT)
+      chan_out = 0;
+  }
 
 
-//void eraseEEPROM() {
-//	for (byte i = 0; i < 1024; i++) //1024 max
-//		EEPROM.write(i, 255);
-//}
+  //void eraseEEPROM() {
+  //	for (byte i = 0; i < 1024; i++) //1024 max
+  //		EEPROM.write(i, 255);
+  //}
 #pragma endregion
 
 
@@ -1478,26 +1463,26 @@ void loadIOValues() {
 //  Encoder routines
 #pragma region Encoder
 void attachInterrupts() {
-  PCintPort::attachInterrupt(PIN_ENC2, &doEncoderB, CHANGE);
-  attachInterrupt(0, doEncoderA, CHANGE);
+    PCintPort::attachInterrupt(PIN_ENC2, &doEncoderB, CHANGE);
+    attachInterrupt(0, doEncoderA, CHANGE);
 }
 
 void encoderHandler() {
-  unsigned char result = rotary_process();
-  if (result) {
-    if (result == DIR_CCW)
-      encoderPos++;
-    else
-      encoderPos--;
-  }
+    unsigned char result = rotary_process();
+    if (result) {
+      if (result == DIR_CCW)
+        encoderPos++;
+      else
+        encoderPos--;
+    }
 }
 
 void doEncoderA() {
-  encoderHandler();
+    encoderHandler();
 }
 
 void doEncoderB() {
-  encoderHandler();
+    encoderHandler();
 }
 #pragma endregion
 
@@ -1508,51 +1493,51 @@ void doEncoderB() {
 #pragma region pinModes
 void setPinModes() {
 
-  Wire.begin();
-  mcp.begin();
-  mcp.pinMode(PIN_EXT_CALIB, OUTPUT);
-  setCalibrationRelays(ON);
-  mcp.pinMode(PIN_EXT_R1, OUTPUT);
-  mcp.pinMode(PIN_EXT_R2, OUTPUT);
-  mcp.pinMode(PIN_EXT_R3, OUTPUT);
-  mcp.pinMode(PIN_EXT_R4, OUTPUT);
-  mcp.pinMode(PIN_EXT_R5, OUTPUT);
-  mcp.pinMode(PIN_EXT_R6, OUTPUT);
-  mcp.pinMode(PIN_EXT_BIAS, OUTPUT);
+    Wire.begin();
+    mcp.begin();
+    mcp.pinMode(PIN_EXT_CALIB, OUTPUT);
+    setCalibrationRelays(ON);
+    mcp.pinMode(PIN_EXT_R1, OUTPUT);
+    mcp.pinMode(PIN_EXT_R2, OUTPUT);
+    mcp.pinMode(PIN_EXT_R3, OUTPUT);
+    mcp.pinMode(PIN_EXT_R4, OUTPUT);
+    mcp.pinMode(PIN_EXT_R5, OUTPUT);
+    mcp.pinMode(PIN_EXT_R6, OUTPUT);
+    mcp.pinMode(PIN_EXT_BIAS, OUTPUT);
 
-  pinMode(PIN_BIAS_LSH, INPUT);
-  pinMode(PIN_BIAS_RSH, INPUT);
-  digitalWrite(PIN_BIAS_LSH, LOW);
-  digitalWrite(PIN_BIAS_RSH, LOW);
-  LSHrange = RSHrange = HIGH;
+    pinMode(PIN_BIAS_LSH, INPUT);
+    pinMode(PIN_BIAS_RSH, INPUT);
+    digitalWrite(PIN_BIAS_LSH, LOW);
+    digitalWrite(PIN_BIAS_RSH, LOW);
+    LSHrange = RSHrange = HIGH;
 
-  pinMode(PIN_SENSE_LSE, INPUT);
-  pinMode(PIN_SENSE_LSH, INPUT);
-  pinMode(PIN_SENSE_RSE, INPUT);
-  pinMode(PIN_SENSE_RSH, INPUT);
+    pinMode(PIN_SENSE_LSE, INPUT);
+    pinMode(PIN_SENSE_LSH, INPUT);
+    pinMode(PIN_SENSE_RSE, INPUT);
+    pinMode(PIN_SENSE_RSH, INPUT);
 
-  pinMode(PIN_LDR_L, INPUT);
-  pinMode(PIN_LDR_R, INPUT);
+    pinMode(PIN_LDR_L, INPUT);
+    pinMode(PIN_LDR_R, INPUT);
 
-  pinMode(PIN_ENC1, INPUT_PULLUP);
-  pinMode(PIN_ENC2, INPUT_PULLUP);
-  pinMode(PIN_BTN, INPUT_PULLUP);
+    pinMode(PIN_ENC1, INPUT_PULLUP);
+    pinMode(PIN_ENC2, INPUT_PULLUP);
+    pinMode(PIN_BTN, INPUT_PULLUP);
 
-  pinMode(PIN_REMOTE, INPUT);
+    pinMode(PIN_REMOTE, INPUT);
 
-  pinMode(PIN_DAC_LSE, OUTPUT);
-  pinMode(PIN_DAC_LSH, OUTPUT);
-  pinMode(PIN_DAC_RSE, OUTPUT);
-  pinMode(PIN_DAC_RSH, OUTPUT);
-  analogWrite(PIN_DAC_LSE, 0);
-  analogWrite(PIN_DAC_LSH, 0);
-  analogWrite(PIN_DAC_RSE, 0);
-  analogWrite(PIN_DAC_RSH, 0);
+    pinMode(PIN_DAC_LSE, OUTPUT);
+    pinMode(PIN_DAC_LSH, OUTPUT);
+    pinMode(PIN_DAC_RSE, OUTPUT);
+    pinMode(PIN_DAC_RSH, OUTPUT);
+    analogWrite(PIN_DAC_LSE, 0);
+    analogWrite(PIN_DAC_LSH, 0);
+    analogWrite(PIN_DAC_RSE, 0);
+    analogWrite(PIN_DAC_RSH, 0);
 
-  pinMode(PIN_LCDBRI, OUTPUT);
-  analogWrite(PIN_LCDBRI, 0);
-}
-#pragma endregion
+    pinMode(PIN_LCDBRI, OUTPUT);
+    analogWrite(PIN_LCDBRI, 0);
+  }
+  #pragma endregion
 
 
 
@@ -1562,57 +1547,57 @@ void setPinModes() {
 
 /** transition to setup mode, display menu **/
 void toSetupState() {
-  //selSetup = SEL_BIAS;
-  oled.clear();
-  setupMenu();
+    //selSetup = SEL_BIAS;
+    oled.clear();
+    setupMenu();
 
-  state = STATE_SETUP;
-  setMute(0);
+    state = STATE_SETUP;
+    setMute(0);
 }
 
 /** transition to error state **/
 void toErrorState() {
-  setCalibrationRelays(ON);
-  setLSE(0); setRSE(0);
-  setLSH(0); setRSH(0);
-  oled.clear();
-  oled.setCursor(36, 2);
-  oled.setFont(textFont);
-  oled.print(msgErr);
-  oled.print(errc);
-  if (errc == 20) {
-    oled.setCursor(10, 4);
-    oled.print("relay power failure");
-  }
-  state = STATE_ERROR;
+    setCalibrationRelays(ON);
+    setLSE(0); setRSE(0);
+    setLSH(0); setRSH(0);
+    oled.clear();
+    oled.setCursor(36, 2);
+    oled.setFont(textFont);
+    oled.print(msgErr);
+    oled.print(errc);
+    if (errc == 20) {
+      oled.setCursor(10, 4);
+      oled.print("relay power failure");
+    }
+    state = STATE_ERROR;
 }
 
 /** transition to I/O channel adjust mode **/
 void toIOState() {
-  state = STATE_IO;
+    state = STATE_IO;
 }
 
 // remember last two channel inputs for A/B switching
 void storeLast() {
-  if (chan_in != lastInput) {
-    prevInput = lastInput;
-    lastInput = chan_in;
-    PRINT("chan:"); PRINT(chan_in); PRINT(" prev:"); PRINT(prevInput); PRINT(" LAST:"); PRINT(lastInput); PRINTLN();
-  }
+    if (chan_in != lastInput) {
+      prevInput = lastInput;
+      lastInput = chan_in;
+      PRINT("chan:"); PRINT(chan_in); PRINT(" prev:"); PRINT(prevInput); PRINT(" LAST:"); PRINT(lastInput); PRINTLN();
+    }
 }
 
 /** transition to normal volume adjust mode **/
 void toRunState() {
-  oled.setFont(runFont);
-  oled.setCursor(24, 0);
-  oled.print(">");
-  oled.setCursor(96, 2);
-  oled.print(">");
-  selIO = SEL_INPUT;
+    oled.setFont(runFont);
+    oled.setCursor(24, 0);
+    oled.print(">");
+    oled.setCursor(96, 2);
+    oled.print(">");
+    selIO = SEL_INPUT;
 
-  mil_onAction = millis();
-  state = STATE_RUN;
-  setMute(volume);
+    mil_onAction = millis();
+    state = STATE_RUN;
+    setMute(volume);
 }
 
 #pragma endregion
@@ -1623,59 +1608,59 @@ void toRunState() {
 /******* set LDRs to current volume *******/
 void setVolume(byte vol) {
 
-  bool goHighL, goHighR, goLowL, goLowR;
-  byte i = vol - 2;
+    bool goHighL, goHighR, goLowL, goLowR;
+    byte i = vol - 2;
 
-  if (isMuted == vol || (isMuted && vol))
-    setMute(vol);
+    if (isMuted == vol || (isMuted && vol))
+      setMute(vol);
 
-  if (vol == 1 || vol == 0) {
-    setLSE_Range(HIGH); setRSE_Range(HIGH);
-    setLSH_Range(LOW); setRSH_Range(LOW);
-    setLSE(2); setRSE(2); setLSH(200); setRSH(200);
-  }
-  else if (vol == VOL_MAX_STEP) {
-    setLSE_Range(LOW); setRSE_Range(LOW);
-    setLSH_Range(HIGH); setRSH_Range(HIGH);
-    setLSE(255); setRSE(255); setLSH(0); setRSH(0);
-  }
-  else {
-    ///////////////////////////////////////////////////////////////////////////////volume bump mod
-    goLowL = dataL[i].i_SH >= 32768 && LSHrange == HIGH;
-    goLowR = dataR[i].i_SH >= 32768 && RSHrange == HIGH;
-    goHighL = dataL[i].i_SH < 32768 && LSHrange == LOW;
-    goHighR = dataR[i].i_SH < 32768 && RSHrange == LOW;
-
-    ////// Set LEFT channel volume
-    setLSE(dataL[i].pw_SE); setLSH(dataL[i].pw_SH); setLSE_Range(HIGH);
-    if (goLowL) {  ///tagme
-      delay(4);
-      setLSH_Range(LOW);
+    if (vol == 1 || vol == 0) {
+      setLSE_Range(HIGH); setRSE_Range(HIGH);
+      setLSH_Range(LOW); setRSH_Range(LOW);
+      setLSE(2); setRSE(2); setLSH(200); setRSH(200);
     }
-    else if (goHighL) {
-      delay(6);
-      setLSH_Range(HIGH);
+    else if (vol == VOL_MAX_STEP) {
+      setLSE_Range(LOW); setRSE_Range(LOW);
+      setLSH_Range(HIGH); setRSH_Range(HIGH);
+      setLSE(255); setRSE(255); setLSH(0); setRSH(0);
+    }
+    else {
+      ///////////////////////////////////////////////////////////////////////////////volume bump mod
+      goLowL = dataL[i].i_SH >= 32768 && LSHrange == HIGH;
+      goLowR = dataR[i].i_SH >= 32768 && RSHrange == HIGH;
+      goHighL = dataL[i].i_SH < 32768 && LSHrange == LOW;
+      goHighR = dataR[i].i_SH < 32768 && RSHrange == LOW;
+
+      ////// Set LEFT channel volume
+      setLSE(dataL[i].pw_SE); setLSH(dataL[i].pw_SH); setLSE_Range(HIGH);
+      if (goLowL) {  ///tagme
+        delay(4);
+        setLSH_Range(LOW);
+      }
+      else if (goHighL) {
+        delay(6);
+        setLSH_Range(HIGH);
+      }
+
+      ////// Set RIGHT channel volume
+      setRSE(dataR[i].pw_SE); setRSH(dataR[i].pw_SH); setRSE_Range(HIGH);
+      if (goLowR) {
+        delay(6);
+        setRSH_Range(LOW);
+      }
+      else if (goHighR) {
+        delay(6);
+        setRSH_Range(HIGH);
+      }
+      /////////////////////////////////////////////////////////////////////////////end volume bump mod
+      mil_onSetLDR = millis();
     }
 
-    ////// Set RIGHT channel volume
-    setRSE(dataR[i].pw_SE); setRSH(dataR[i].pw_SH); setRSE_Range(HIGH);
-    if (goLowR) {
-      delay(6);
-      setRSH_Range(LOW);
-    }
-    else if (goHighR) {
-      delay(6);
-      setRSH_Range(HIGH);
-    }
-    /////////////////////////////////////////////////////////////////////////////end volume bump mod
-    mil_onSetLDR = millis();
-  }
-
-  drawVolume(volume);
-  int sense = analogRead(PIN_SENSE_RSH);
-  PRINT("RSH voltage:"); PRINT(sense * 4.9); PRINT("mV");
-  PRINT("   RSH current:"); PRINT(sense * 4.9 / (33000 * RSHrange + 2200)); PRINT("mA");
-  PRINT("   Vol:"); PRINT(vol); PRINT("  data:"); PRINTLN(dataR[i].i_SH);
+    drawVolume(volume);
+    int sense = analogRead(PIN_SENSE_RSH);
+    PRINT("RSH voltage:"); PRINT(sense * 4.9); PRINT("mV");
+    PRINT("   RSH current:"); PRINT(sense * 4.9 / (33000 * RSHrange + 2200)); PRINT("mA");
+    PRINT("   Vol:"); PRINT(vol); PRINT("  data:"); PRINTLN(dataR[i].i_SH);
 }
 
 void toggleMute() {
@@ -1698,9 +1683,7 @@ void setup() {
 
   oled.begin(&OLED_TYPE, I2C_ADDRESS);
 
-  Wire.setClock(400000L);
-  //warning: 'void SSD1306AsciiWire::set400kHz()' is deprecated: use Wire.setClock(400000L) [-Wdeprecated-declarations]
-  //oled.set400kHz();
+  oled.set400kHz();
   oled.clear();
   //  oled.setContrast(128);
 
@@ -1746,23 +1729,23 @@ Serial.begin(57600);
       toSetupState();
 
     else {
-      #ifdef DELAY
-      setLSE(50); setRSE(50);
-      setLSH(50); setRSH(50);
-      doDelay();
-      #endif
-      loadIOValues();
-      state = STATE_IO;
-      oled.clear();
-      drawRunDisplay();
-      setInput();
-      setOutput();
-      isMuted = volume == 0;
-      setVolume(volume);
-      delay(250);
-      mcp.digitalWrite(PIN_EXT_CALIB, 0);
-      setMute(volume);
-      toRunState();
+        #ifdef DELAY
+        setLSE(50); setRSE(50);
+        setLSH(50); setRSH(50);
+        doDelay();
+        #endif
+        loadIOValues();
+        state = STATE_IO;
+        oled.clear();
+        drawRunDisplay();
+        setInput();
+        setOutput();
+        isMuted = volume == 0;
+        setVolume(volume);
+        delay(250);
+        mcp.digitalWrite(PIN_EXT_CALIB, 0);
+        setMute(volume);
+        toRunState();
     }
   }
 
@@ -1776,47 +1759,6 @@ Serial.begin(57600);
   IRPressed = false;
   attachInterrupts(); // start reading encoder
   encoderPos = 0;
-
-  ////////////////////////////////////////////////////////////////////////////////////////
-  ////////////////////////////////////////////////////////////////////////////////////////
-  // Impedance adjustment.  Hold encoder button at startup and rotate to change.  Then calibrate.
-  //
-    int encoder = encoderPos;
-    if( digitalRead(PIN_BTN) == LOW && btnReleased ) {
-      //impedance = NOM_IMPEDANCE/1000;
-      impedance = EEPROM.read(6);
-      if( impedance > MAXIMPEDANCE ) impedance = MAXIMPEDANCE;
-      if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
-      if( impedance % IMPEDANCESTEP != 0 ) impedance = MINIMPEDANCE;
-      oled.clear();
-      oled.print("Impedance (K) : "); oled.print(impedance);
-
-      while(true) {
-        delay(100);
-        if( encoderPos > encoder) {
-          impedance += IMPEDANCESTEP;
-          if( impedance > MAXIMPEDANCE ) impedance = MAXIMPEDANCE;
-          oled.clear();
-          oled.setCursor(10, 2);
-          oled.print("Impedance (K) : "); oled.print(impedance);
-
-        }
-        if( encoderPos < encoder) {
-          impedance -= IMPEDANCESTEP;
-          if( impedance < MINIMPEDANCE ) impedance = MINIMPEDANCE;
-          oled.clear();
-          oled.setCursor(10, 2);
-          oled.print("Impedance (K) : "); oled.print(impedance);
-
-        }
-        encoder = encoderPos;
-        if( digitalRead(PIN_BTN) == HIGH ) {  // Exit impedance loop
-          encoderPos = 0;
-          toRunState();
-          break;
-        }
-      }
-    }
 }
 #pragma endregion
 
