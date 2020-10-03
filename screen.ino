@@ -74,13 +74,13 @@ void drawOutput() {
 # endif
 
 // Functions for printing two large digits. Works from 00-99
-void drawRunDisplay () {
+void drawRunDisplay (byte vol) {
   oled.setCursor(0, 5);
   oled.setFont(runFont);
   oled.print("VOLUME:");
   oled.setCursor(28, 2);
   oled.print("           ");
-  drawVolume(volume);
+  drawVolume(vol);
 #if INPUTCOUNT > 0
   drawInput();
 # endif
@@ -105,4 +105,37 @@ void setupMenu () {
   oled.println("Calibrate");
   oled.setCursor(10, 6);
   oled.println("Exit");
+}
+
+byte sinMap(unsigned long x, int xmin, int xmax, int offset) {
+  float pw = (sin(map(x, xmin, xmax, 4712, 6283) / 1000.0) + 1) * (LCDBRI_MAX - offset) + offset;
+  return byte(pw);
+}
+
+void startLCDFadeIn() {
+  if (LCDBacklightMode == LCDSTATE_MIN || LCDBacklightMode == LCDSTATE_FADEOUT) {
+    LCDBacklightMode = LCDSTATE_FADEIN;
+    mil_onFadeIn = millis();
+    LCDinitialPW = LCDcurrentPW;
+  }
+}
+
+void startLCDFadeOut() {
+  if (LCDBacklightMode == LCDSTATE_MAX || LCDBacklightMode == LCDSTATE_FADEIN) {
+    LCDBacklightMode = LCDSTATE_FADEOUT;
+    mil_onFadeOut = millis();
+    LCDinitialPW = LCDcurrentPW;
+  }
+}
+
+void setLCDMinLight() {
+  LCDBacklightMode = LCDSTATE_MIN;
+  oled.setContrast(LCDBRI_MIN);
+  LCDcurrentPW = LCDBRI_MIN;
+}
+
+void setLCDMaxLight() {
+  LCDBacklightMode = LCDSTATE_MAX;
+  oled.setContrast(LCDBRI_MAX);
+  LCDcurrentPW = LCDBRI_MAX;
 }

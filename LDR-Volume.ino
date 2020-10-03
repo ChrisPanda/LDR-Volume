@@ -10,6 +10,11 @@
 #define OLED_TYPE Adafruit128x64    // For SSD1306 OLED - exactly one type must be defined, comment out one of the two
 //#define OLED_TYPE SH1106_128x64   // For SH1106 OLED
 #define TIME_POWERON 3              // wait few seconds to stabilize LDRs before unmuting output relays. Counting starts after the welcome message.
+#define LCDBRI_MAX 250              //** LCD full brightness (0 - 255)
+#define LCDBRI_MIN 0               //** LCD eco brightness
+#define TIME_LCDFADEIN 1            //** Time in seconds to bring the screen to full brightness
+#define TIME_LCDFADEOUT 5           //** Time in seconds to bring the screen to dim brightness
+#define TIME_LCDFADEAFTER 4         //** Time in seconds after last user input to start fade out
 
 #include <PinChangeInt.h>
 #include <EEPROM.h>
@@ -132,6 +137,11 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 #define LDR_FULL_MAX 200            // maximum acceptable R when PWM=255. 
 
 
+// LCD states
+#define LCDSTATE_MIN 0
+#define LCDSTATE_FADEIN 1
+#define LCDSTATE_MAX 2
+#define LCDSTATE_FADEOUT 3
 
 /******* I/O PORTS *******/
 #define PIN_ENC1 2        // Encoder 1
@@ -156,8 +166,8 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 #define PIN_EXT_R2 2      // port extender: relay 2
 #define PIN_EXT_R3 3      // port extender: relay 3
 #define PIN_EXT_R4 6      // port extender: relay 4
-#define PIN_EXT_R5 4      // port extender: relay 5   // CGSONG
-#define PIN_EXT_R6 5      // port extender: relay 6   // CGSONG
+#define PIN_EXT_R5 5      // port extender: relay 5   // CGSONG
+#define PIN_EXT_R6 4      // port extender: relay 6   // CGSONG
 #define PIN_EXT_BIAS 7    // port extender: BIAS
 
 /****** IR remote codes ******/
@@ -235,11 +245,14 @@ byte LSHrange;
 byte RSHrange;
 unsigned int tick;
 byte percent;
-bool notCalibrated;		  // if no calibration data exists, remain in Setup mode
+bool notCalibrated;		            // if no calibration data exists, remain in Setup mode
 unsigned long calibStarted;
-bool MutedByRemote = 0;
 byte impedance;                   // target impedance
+bool MutedByRemote = 0;
 bool unMute = 0;
+byte LCDBacklightMode;            // LCD state 0= low; 1= fade in; 2= high; 3= fade out
+byte LCDcurrentPW;                // current backlight pulse width
+byte LCDinitialPW;                // pulse width when fade operation started
 
 /******** LDR ********/
 //LDR necessary current for each volume step.
@@ -286,6 +299,8 @@ unsigned long mil_onOutput;    // Last time relay set
 unsigned long mil_delta;
 unsigned long mil_btnHold;     // Stores start time of button hold
 unsigned long mil_powerOn;     // delays unmuting the outputs
+unsigned long mil_onFadeIn;       // LCD fade timing
+unsigned long mil_onFadeOut;      // LCD fade timing
 
 #pragma endregion
 
@@ -414,7 +429,7 @@ byte doCalibration() {
   bool reloopL, reloopR = false;
   bool nojumpL, nojumpR = false;
 
-  //	setLCDMaxLight();
+  setLCDMaxLight();
   state = STATE_CALIB;
   setMute(0);
   errc = doSelfTest();
@@ -917,7 +932,7 @@ byte doCalibration() {
   saveCalibration();
   oled.clear();
   toRunState();
-  drawRunDisplay();    // redraw full screen again
+  drawRunDisplay(volume);    // redraw full screen again
   setVolume(volume);
   setCalibrationRelays(OFF);
 
@@ -1116,6 +1131,9 @@ void setMute(byte volume) {
   mcp.digitalWrite(PIN_EXT_R5, !isMuted && !chan_out);
   mcp.digitalWrite(PIN_EXT_R6, !isMuted && chan_out);
 
+  // original code use following code, but it cause a click pop noise!!
+  // mcp.digitalWrite(PIN_EXT_CALIB, isMuted);
+  
   if (state == STATE_RUN) drawVolume(volume);
 }
 
@@ -1586,14 +1604,8 @@ void toErrorState() {
   setLSE(0); setRSE(0);
   setLSH(0); setRSH(0);
   oled.clear();
-  oled.setCursor(36, 2);
-  oled.setFont(textFont);
-  oled.print(msgErr);
-  oled.print(errc);
-  if (errc == 20) {
-    oled.setCursor(10, 4);
-    oled.print("relay power failure");
-  }
+  printErrorText();
+  
   state = STATE_ERROR;
 }
 
@@ -1608,6 +1620,86 @@ void storeLast() {
     prevInput = lastInput;
     lastInput = chan_in;
     PRINT("chan:"); PRINT(chan_in); PRINT(" prev:"); PRINT(prevInput); PRINT(" LAST:"); PRINT(lastInput); PRINTLN();
+  }
+}
+
+void printErrorText() {
+  oled.clear();
+  oled.setCursor(36, 0);
+  oled.setFont(textFont);
+  oled.print(msgErr);
+  oled.print(errc);
+  switch (errc) {
+    case (1):
+      oled.setCursor(6, 2);
+      oled.print(F("left series could not"));
+      oled.setCursor(26, 4);
+      oled.print(F("be calibrated"));
+      break;
+    case (2):
+      oled.setCursor(6, 2);
+      oled.print(F("right series could not"));
+      oled.setCursor(26, 4);
+      oled.print(F("be calibrated"));
+      break;
+    case (3):
+      oled.setCursor(6, 2);
+      oled.print(F("left shunt could not"));
+      oled.setCursor(26, 4);
+      oled.print(F("be calibrated"));
+      break;
+    case (4):
+      oled.setCursor(6, 2);
+      oled.print(F("right shunt could not"));
+      oled.setCursor(26, 4);
+      oled.print(F("be calibrated"));
+      break;
+    case (10):
+      oled.setCursor(10, 2);
+      oled.print(F("left series too low"));
+      oled.setCursor(36, 4);
+      oled.print(F("max value"));
+      oled.setCursor(8, 6);
+      oled.print(F("adjust trimmer RT1"));
+      break;
+    case (11):
+      oled.setCursor(10, 2);
+      oled.print(F("right series too low"));
+      oled.setCursor(36, 4);
+      oled.print(F("max value"));
+      oled.setCursor(8, 6);
+      oled.print(F("adjust trimmer RT3"));
+      break;
+    case (12):
+      oled.setCursor(10, 2);
+      oled.print(F("left shunt too low"));
+      oled.setCursor(36, 4);
+      oled.print(F("max value"));
+      oled.setCursor(8, 6);
+      oled.print(F("adjust trimmer RT2"));
+      break;
+    case (13):
+      oled.setCursor(10, 2);
+      oled.print(F("right shunt too low"));
+      oled.setCursor(36, 4);
+      oled.print(F("max value"));
+      oled.setCursor(8, 6);
+      oled.print(F("adjust trimmer RT4"));
+      break;
+    case (30):
+      oled.setCursor(10, 2);
+      oled.print(F("configuration error:"));
+      oled.setCursor(20, 4);
+      oled.print(F("inputs/outputs"));
+      oled.setCursor(26, 6);
+      oled.print(F("out of range"));
+      break;
+    case (20):
+      oled.setCursor(36, 2);
+      oled.print(F("LDR/relay"));
+      oled.setCursor(27, 4);
+      oled.print(F("power failure"));
+      break;
   }
 }
 
@@ -1652,9 +1744,8 @@ void setVolume(byte vol) {
 
   if (unMute)setMute(vol);
 
-  if (vol == 0) {
+  if (vol == 0) 
     setMute(0);
-  }
   else if (vol == 1) {  // vol == 1 || vol == 0
     setLSE_Range(HIGH); setRSE_Range(HIGH);
     setLSH_Range(LOW); setRSH_Range(LOW);
@@ -1727,9 +1818,11 @@ void setup() {
   Wire.setClock(400000L);
   //warning: 'void SSD1306AsciiWire::set400kHz()' is deprecated: use Wire.setClock(400000L) [-Wdeprecated-declarations]
   //oled.set400kHz();
-  oled.clear();
-  //  oled.setContrast(128);
 
+  //  oled.setContrast(128);
+  oled.setContrast(0);
+  oled.clear();
+      
   setPinModes();
 
   setLSE_Range(LOW); setRSE_Range(LOW); setLSE(255); setRSE(255);
@@ -1755,9 +1848,15 @@ Serial.begin(57600);
   oled.setCursor((128 - sizeof(msgWelcome4) * oled.fontWidth()) / 2, 4);
   oled.println (msgWelcome4);
   oled.setCursor(0, 6);
-  oled.print(msgImpedance); oled.print(impedance);
+  oled.print(msgImpedance); oled.print(EEPROM.read(6));
 
+  for (byte i = 0; i <= LCDBRI_MAX; i++) {
+    oled.setContrast(i);
+    delay(10);
+  }
+    
   delay(2000);
+  setLCDMaxLight();
 
   //test if the relays and LDRs are powered
   if (getRLSE() + getRRSE() + getRLSH() + getRRSH() > LDR_FULL_MAX * 4) {
@@ -1773,7 +1872,6 @@ Serial.begin(57600);
     notCalibrated = !loadCalibration();
     if (notCalibrated)
       toSetupState();
-
     else {
 #ifdef DELAY
       setLSE(50); setRSE(50);
@@ -1784,7 +1882,7 @@ Serial.begin(57600);
       mil_powerOn = millis();
       state = STATE_IO;
       oled.clear();
-      drawRunDisplay();
+      drawRunDisplay(volume);
       setInput();
       setOutput();
       isMuted = volume == 0;
@@ -1797,7 +1895,7 @@ Serial.begin(57600);
   }
 
 
-  //         mil_onAction = millis(); // begin counting to dim the LCD
+  mil_onAction = millis(); // begin counting to dim the LCD
 
   mcp.digitalWrite(PIN_EXT_BIAS, HIGH); // turn biasing voltage on
 
@@ -1838,7 +1936,7 @@ Serial.begin(57600);
         if( digitalRead(PIN_BTN) == HIGH ) {  // Exit impedance loop
           encoderPos = 0;
           oled.clear();
-          drawRunDisplay();
+          drawRunDisplay(volume);
           toRunState();
           break;
         }
@@ -1914,6 +2012,10 @@ void loop() {
       // Prevent repeating if a code has not been received for a while.
       if ((millis() - mil_onRemoteKey) > 500)  {
         isIRrepeat = 0;
+      }
+
+      if (IRkey == cIR_UP || IRkey == cIR_DOWN || IRkey == cIR_LEFT || IRkey == cIR_RIGHT || IRkey == cIR_PLAY || IRkey == cIR_MENU) {
+        startLCDFadeIn();
       }
 
       if (isIRrepeat && (previousIRkey == cIR_UP || previousIRkey == cIR_DOWN))  // Repeat the specified keys
@@ -1993,7 +2095,7 @@ void loop() {
   if (encoderPos != 0)
   {
     mil_onAction = millis();
-    //		startLCDFadeIn();
+    startLCDFadeIn();
 
 
     /** encoder rotated in volume mode **/
@@ -2074,7 +2176,8 @@ void loop() {
     mil_btnHold = millis ();                                      // hold mod
     btnReleased = false;
     mil_onButton = mil_onAction = millis();    // Start debounce timer
-
+    startLCDFadeIn();
+      
     /** button pressed in normal mode **/
     if (state == STATE_RUN)
       if (INPUTCOUNT <= 1 && OUTPUTCOUNT <= 1) {
@@ -2136,7 +2239,7 @@ void loop() {
           if (!notCalibrated) {
             oled.clear();
             toRunState();
-            drawRunDisplay();
+            //drawRunDisplay();
           }
           else {
             oled.setCursor (20, 3);
@@ -2174,6 +2277,34 @@ void loop() {
     btnReleased = true;
     //mil_onButton = millis();
   }
+
+  //** Fade in LCD
+  if (LCDBacklightMode == LCDSTATE_FADEIN) {
+    mil_delta = millis() - mil_onFadeIn;
+    if (mil_delta <= TIME_LCDFADEIN * 1000) {
+      LCDcurrentPW = sinMap(mil_delta, 0, TIME_LCDFADEIN * 1000, LCDinitialPW);
+      oled.setContrast(LCDcurrentPW);
+    }
+    else
+      setLCDMaxLight();
+  }
+
+  
+  //** Fade out LCD
+  if (LCDBacklightMode == LCDSTATE_FADEOUT) {
+    mil_delta = millis() - mil_onFadeOut;
+    if (mil_delta <= TIME_LCDFADEOUT * 1000) {
+      LCDcurrentPW = sinMap(mil_delta, TIME_LCDFADEOUT * 1000, 0, LCDBRI_MIN);
+      oled.setContrast(LCDcurrentPW);
+    }
+    else
+      setLCDMinLight();
+  }
+
+  //** after some time without user input, dim LCD
+  if (LCDBacklightMode == LCDSTATE_MAX && millis() - mil_onAction > TIME_LCDFADEAFTER * 1000)
+    startLCDFadeOut();
+      
   #pragma endregion
 
 
