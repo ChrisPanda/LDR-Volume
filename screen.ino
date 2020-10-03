@@ -74,13 +74,13 @@ void drawOutput() {
 # endif
 
 // Functions for printing two large digits. Works from 00-99
-void drawRunDisplay () {
+void drawRunDisplay (byte vol) {
   oled.setCursor(0, 5);
   oled.setFont(runFont);
   oled.print("VOLUME:");
   oled.setCursor(28, 2);
   oled.print("           ");
-  drawVolume(volume);
+  drawVolume(vol);
 #if INPUTCOUNT > 0
   drawInput();
 # endif

@@ -917,7 +917,7 @@ byte doCalibration() {
   saveCalibration();
   oled.clear();
   toRunState();
-  drawRunDisplay();    // redraw full screen again
+  drawRunDisplay(volume);    // redraw full screen again
   setVolume(volume);
   setCalibrationRelays(OFF);
 
@@ -1586,14 +1586,7 @@ void toErrorState() {
   setLSE(0); setRSE(0);
   setLSH(0); setRSH(0);
   oled.clear();
-  oled.setCursor(36, 2);
-  oled.setFont(textFont);
-  oled.print(msgErr);
-  oled.print(errc);
-  if (errc == 20) {
-    oled.setCursor(10, 4);
-    oled.print("relay power failure");
-  }
+  printErrorText();
   state = STATE_ERROR;
 }
 
@@ -1610,6 +1603,87 @@ void storeLast() {
     PRINT("chan:"); PRINT(chan_in); PRINT(" prev:"); PRINT(prevInput); PRINT(" LAST:"); PRINT(lastInput); PRINTLN();
   }
 }
+
+void printErrorText() {
+    oled.clear();
+    oled.setCursor(36, 0);
+    oled.setFont(textFont);
+    oled.print(msgErr);
+    oled.print(errc);
+    switch (errc) {
+      case (1):
+        oled.setCursor(6, 2);
+        oled.print(F("left series could not"));
+        oled.setCursor(26, 4);
+        oled.print(F("be calibrated"));
+        break;
+      case (2):
+        oled.setCursor(6, 2);
+        oled.print(F("right series could not"));
+        oled.setCursor(26, 4);
+        oled.print(F("be calibrated"));
+        break;
+      case (3):
+        oled.setCursor(6, 2);
+        oled.print(F("left shunt could not"));
+        oled.setCursor(26, 4);
+        oled.print(F("be calibrated"));
+        break;
+      case (4):
+        oled.setCursor(6, 2);
+        oled.print(F("right shunt could not"));
+        oled.setCursor(26, 4);
+        oled.print(F("be calibrated"));
+        break;
+      case (10):
+        oled.setCursor(10, 2);
+        oled.print(F("left series too low"));
+        oled.setCursor(36, 4);
+        oled.print(F("max value"));
+        oled.setCursor(8, 6);
+        oled.print(F("adjust trimmer RT1"));
+        break;
+      case (11):
+        oled.setCursor(10, 2);
+        oled.print(F("right series too low"));
+        oled.setCursor(36, 4);
+        oled.print(F("max value"));
+        oled.setCursor(8, 6);
+        oled.print(F("adjust trimmer RT3"));
+        break;
+      case (12):
+        oled.setCursor(10, 2);
+        oled.print(F("left shunt too low"));
+        oled.setCursor(36, 4);
+        oled.print(F("max value"));
+        oled.setCursor(8, 6);
+        oled.print(F("adjust trimmer RT2"));
+        break;
+      case (13):
+        oled.setCursor(10, 2);
+        oled.print(F("right shunt too low"));
+        oled.setCursor(36, 4);
+        oled.print(F("max value"));
+        oled.setCursor(8, 6);
+        oled.print(F("adjust trimmer RT4"));
+        break;
+      case (30):
+        oled.setCursor(10, 2);
+        oled.print(F("configuration error:"));
+        oled.setCursor(20, 4);
+        oled.print(F("inputs/outputs"));
+        oled.setCursor(26, 6);
+        oled.print(F("out of range"));
+        break;
+      case (20):
+        oled.setCursor(36, 2);
+        oled.print(F("LDR/relay"));
+        oled.setCursor(27, 4);
+        oled.print(F("power failure"));
+        break;
+    }
+}
+
 
 /** transition to normal volume adjust mode **/
 void toRunState() {
@@ -1633,7 +1707,7 @@ void toRunState() {
 
   mil_onAction = millis();
   state = STATE_RUN;
-  //setMute(volume);
+  setMute(volume);
 }
 
 #pragma endregion
@@ -1652,10 +1726,7 @@ void setVolume(byte vol) {
 
   if (unMute)setMute(vol);
 
-  if (vol == 0) {
-    setMute(0);
-  }
-  else if (vol == 1) {  // vol == 1 || vol == 0
+  if (vol == 1 || vol == 0) {
     setLSE_Range(HIGH); setRSE_Range(HIGH);
     setLSH_Range(LOW); setRSH_Range(LOW);
     setLSE(2); setRSE(2); setLSH(200); setRSH(200);
@@ -1755,7 +1826,7 @@ Serial.begin(57600);
   oled.setCursor((128 - sizeof(msgWelcome4) * oled.fontWidth()) / 2, 4);
   oled.println (msgWelcome4);
   oled.setCursor(0, 6);
-  oled.print(msgImpedance); oled.print(impedance);
+  oled.print(msgImpedance); oled.print(EEPROM.read(6));
 
   delay(2000);
 
@@ -1784,7 +1855,7 @@ Serial.begin(57600);
       mil_powerOn = millis();
       state = STATE_IO;
       oled.clear();
-      drawRunDisplay();
+      drawRunDisplay(volume);
       setInput();
       setOutput();
       isMuted = volume == 0;
@@ -1838,7 +1909,7 @@ Serial.begin(57600);
         if( digitalRead(PIN_BTN) == HIGH ) {  // Exit impedance loop
           encoderPos = 0;
           oled.clear();
-          drawRunDisplay();
+          drawRunDisplay(volume);
           toRunState();
           break;
         }
@@ -2136,7 +2207,7 @@ void loop() {
           if (!notCalibrated) {
             oled.clear();
             toRunState();
-            drawRunDisplay();
+            drawRunDisplay(volume);
           }
           else {
             oled.setCursor (20, 3);
