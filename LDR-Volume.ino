@@ -3,13 +3,13 @@
 // 2. use Arduino pulseIn function instead of newpulseIn and change remote control volume up/down by cgsong (2018.05.19)
 // 3. Impedance calibration bug fix by wineds
 //    - system would not calibrate @ 5K or > 30K due to casting problem from byte variable.
-
+#define DETECT_POWEROFF 1
 #define I2C_ADDRESS 0x3C            // OLED I2C address, you can use i2c scanner sketch to find it
 //#define HALF_STEP                 // Half-step mode encoder? Comment out for Bourns specified in BOM.
 #define PCB 0                       //different settings for different PCBs
 #define OLED_TYPE Adafruit128x64    // For SSD1306 OLED - exactly one type must be defined, comment out one of the two
 //#define OLED_TYPE SH1106_128x64   // For SH1106 OLED
-
+#define TIME_POWERON 3              // wait few seconds to stabilize LDRs before unmuting output relays. Counting starts after the welcome message.
 
 #include <PinChangeInt.h>
 #include <EEPROM.h>
@@ -76,7 +76,7 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 #define VOL_MAX_STEP 50       //** maximum volume steps; range: 20...80. Higher = more memory usage
 #define VOL_DEFAULT 5         //** default volume step. Must be <= than MAX
 #define BTN_HOLD_TIME 2000    //** Time needed to hold the encoder button for entering setup menu. Default 2s
-#define TIME_EXITSELECT 1     //** Time in seconds to exit I/O select mode when there is no activity
+#define TIME_EXITSELECT 3     //** Time in seconds to exit I/O select mode when there is no activity
 #define menuFont X11fixed7x14
 #define textFont Verdana12
 #define runFont X11fixed7x14
@@ -161,11 +161,10 @@ char msgNoCalib[] = "Please calibrate";               //** <-- maximum 19 charac
 #define PIN_EXT_BIAS 7    // port extender: BIAS
 
 /****** IR remote codes ******/
-#define cIR_UP 3    // 5
-#define cIR_DOWN 4  // 6
-
-#define cIR_LEFT  6 // 4
-#define cIR_RIGHT 5 // 3
+#define cIR_UP 3      // previous value 5
+#define cIR_DOWN 4    // previous value 6
+#define cIR_LEFT  6   // previous value 4
+#define cIR_RIGHT 5   // previous value 3
 #define cIR_CENTER 46
 #define cIR_MENU 1
 #define cIR_PLAY 47
@@ -238,7 +237,9 @@ unsigned int tick;
 byte percent;
 bool notCalibrated;		  // if no calibration data exists, remain in Setup mode
 unsigned long calibStarted;
+bool MutedByRemote = 0;
 byte impedance;                   // target impedance
+bool unMute = 0;
 
 /******** LDR ********/
 //LDR necessary current for each volume step.
@@ -284,6 +285,7 @@ unsigned long mil_onInput;     // Last time relay set
 unsigned long mil_onOutput;    // Last time relay set
 unsigned long mil_delta;
 unsigned long mil_btnHold;     // Stores start time of button hold
+unsigned long mil_powerOn;     // delays unmuting the outputs
 
 #pragma endregion
 
@@ -1135,8 +1137,10 @@ void setOutput() {
   if (millis() - mil_onOutput > TIME_RELAYLATCH) {
     drawOutput();
 
-    mcp.digitalWrite(PIN_EXT_R5, (!chan_out));
-    mcp.digitalWrite(PIN_EXT_R6, (chan_out));
+    if (unMute) {
+      mcp.digitalWrite(PIN_EXT_R5, (!chan_out));
+      mcp.digitalWrite(PIN_EXT_R6, (chan_out));
+    }
 
     mil_onOutput = millis();
   }
@@ -1609,6 +1613,17 @@ void storeLast() {
 
 /** transition to normal volume adjust mode **/
 void toRunState() {
+  if (state != STATE_IO) {
+    oled.clear();
+    if (!MutedByRemote){
+      setMute(volume);
+      drawRunDisplay(volume);
+    }
+    else {
+      setMute(0);
+      drawRunDisplay(0);
+    }
+  }
   oled.setFont(runFont);
   oled.setCursor(24, 0);
   oled.print(">");
@@ -1618,7 +1633,7 @@ void toRunState() {
 
   mil_onAction = millis();
   state = STATE_RUN;
-  setMute(volume);
+  //setMute(volume);
 }
 
 #pragma endregion
@@ -1632,8 +1647,10 @@ void setVolume(byte vol) {
   bool goHighL, goHighR, goLowL, goLowR;
   byte i = vol - 2;
 
-  if (isMuted == vol || (isMuted && vol))
-    setMute(vol);
+  //if (isMuted == vol || (isMuted && vol))
+    //setMute(vol);
+
+  if (unMute)setMute(vol);
 
   if (vol == 0) {
     setMute(0);
@@ -1729,14 +1746,17 @@ Serial.begin(57600);
 
   // display welcome message
   oled.setFont(logoFont);
-  oled.setCursor((128 - sizeof(msgWelcome1) * oled.fontWidth()) / 2, 0);
-  oled.println (msgWelcome1);
-  oled.setCursor((128 - sizeof(msgWelcome2) * oled.fontWidth()) / 2, 2);
+  //oled.setCursor((128 - sizeof(msgWelcome1) * oled.fontWidth()) / 2, 0);
+  //oled.println (msgWelcome1);
+  oled.setCursor((128 - sizeof(msgWelcome2) * oled.fontWidth()) / 2, 0);
   oled.println (msgWelcome2);
-  oled.setCursor((128 - sizeof(msgWelcome3) * oled.fontWidth()) / 2, 4);
+  oled.setCursor((128 - sizeof(msgWelcome3) * oled.fontWidth()) / 2, 2);
   oled.println (msgWelcome3);
-  oled.setCursor((128 - sizeof(msgWelcome4) * oled.fontWidth()) / 2, 6);
-  oled.print (msgWelcome4);
+  oled.setCursor((128 - sizeof(msgWelcome4) * oled.fontWidth()) / 2, 4);
+  oled.println (msgWelcome4);
+  oled.setCursor(0, 6);
+  oled.print(msgImpedance); oled.print(impedance);
+
   delay(2000);
 
   //test if the relays and LDRs are powered
@@ -1761,6 +1781,7 @@ Serial.begin(57600);
       doDelay();
 #endif
       loadIOValues();
+      mil_powerOn = millis();
       state = STATE_IO;
       oled.clear();
       drawRunDisplay();
@@ -1843,9 +1864,20 @@ void impedanceDisplay() {
 #pragma region loop
 void loop() {
 
-  #pragma region powerOff
+#pragma region unmute_delay
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+///// unmute output relays once after TIME_POWERON seconds after power up and stop until next power up //
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+  if (!unMute) {
+    unMute = (millis() - mil_powerOn) > TIME_POWERON * 1000;
+    if (unMute)setMute(volume);
+  }
+#pragma endregion
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#pragma region powerOff
   // Detect power off
-  if (state == STATE_RUN) {
+  if (state == STATE_RUN && DETECT_POWEROFF) {
     long vcc;
     ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
     delay(2);
@@ -1916,7 +1948,10 @@ void loop() {
           }
           break;
         case cIR_PLAY:
-          toggleMute();
+          if (volume > 0) {
+            MutedByRemote = !MutedByRemote;
+            toggleMute();
+          }
           break;
         case cIR_CENTER:
           if (lastInput == prevInput)break;
@@ -1969,6 +2004,7 @@ void loop() {
       if (volume > VOL_MAX_STEP)
         volume = VOL_MAX_STEP;
       setVolume(volume);
+      MutedByRemote=0;
     }
 
 
